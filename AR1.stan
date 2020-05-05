@@ -9,4 +9,5 @@ parameters {
 }
 model {
     returns[2:N] ~ normal(theta_0 + theta_1 * returns[1:(N-1)], sigma);
+    // note: improper/default priors are used here. We specify priors later
 }
