@@ -1,7 +1,7 @@
 data {
-    int<lower = 0> Q;                           // order of MA model
-    int<lower = Q> N;                           // number of observations
-    vector[N] returns;                          // the time series vector
+  int<lower=0> Q;                               // num previous noise terms
+  int<lower=3> T;                               // num observations
+  vector[T] returns;                            // observation at time t
 }
 parameters {
     real mu;                                    // mean of the TS 
@@ -9,34 +9,30 @@ parameters {
     real<lower = 0> sigma;                      // std dev of the noise 
 }
 transformed parameters {
-    vector[N] epsilon;                          // vector of noise at time t, to be used to estimate sigma
-    
-    for (n in 1:N){
-        epsilon[n] = returns[n] - mu;           // initial definition of the noise at step n
+    vector[T] epsilon;                          // vector of noise at time t, to be used to estimate sigma
 
-        for (q in min(n-1, Q)){
-            epsilon[n] = epsilon[n] - theta[q]*epsilon[n-q]; 
-            // subtract the impact of the previous shocks
-        }
-    }
+    for (t in 1:T) {
+        epsilon[t] = returns[t] - mu;
+        for (q in 1:min(t - 1, Q))
+            epsilon[t] = epsilon[t] - theta[q] * epsilon[t - q];
+  }
 }
 model {
-    // helpful parameters
-    vector[N] previous_step;                    // vector storing the previous steps in the predicted TS
+    // helpful quantity
+    vector[T] previous_steps;
 
-    // priors
-    mu ~ normal(0, 4);                          // flat priors - could use Cauchy for even flatter priors
-    theta ~ normal(0,1)
-    sigma ~ exponential(2)                      // use a prior defined on the positives only
+    // priors 
+    mu ~ cauchy(0, 2.5);
+    theta ~ cauchy(0, 2.5);
+    sigma ~ cauchy(0, 2.5);
 
-    // the likelihood 
-    for (n in 1:N){
-        previous_step[n] = mu;                  // acts as a place holder, starts with 0 (based on prior)
+  // likelihood
+  for (t in 1:T) {
+    previous_steps[t] = mu;
+    
+    for (q in 1:min(t - 1, Q))
+        previous_steps[t] = previous_steps[t] + theta[q] * epsilon[t - q];
+  }
 
-        for (q in min(n-1, Q)){                 // same loop as above to update the previous step
-            previous_step[n] = previous_step[n] + theta[q] * epsilon[n-q];
-        }
-
-        returns ~ normal(previous_step, sigma);
-    }
+  returns ~ normal(previous_steps, sigma);
 }

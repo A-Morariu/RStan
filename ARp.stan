@@ -12,6 +12,7 @@ parameters {
 
 model { 
     // specify priors 
+    mu ~ normal(0,4);
     theta ~ normal(0, 2);
     sigma ~ exponential(2);
 

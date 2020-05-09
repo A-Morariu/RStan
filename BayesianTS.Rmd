@@ -1,0 +1,448 @@
+---
+title: "Bayesian Time Series with Stan"
+author: "Alin Morariu"
+date: "08/05/2020"
+output: pdf_document
+header-includes: 
+     - \usepackage{amsmath}
+abstract: "While time series analysis has typically been performed via the frequentist approach to statistics, Bayesian methods are now rising in popularity. Increases in computing power and more interpretable results have made fitting class statistical models with a Bayesian approach more attractive. In this document, we adapt 3 standard time series models to fit the Bayesian framework and perform parameter estimates with the help of R-Stan."
+toc: yes
+---
+\newpage
+<!-- Introduction -->
+\section{A Note to the Reader}
+This document is \textbf{not} a time series tutorial. The focus is not performing an in-depth and appropriate time series analysis but simply using Markov Chain Monte Carlo (MCMC) methods for the purpose of \textit{parameter estimation}. As such, all things considering modeling checking and forecasting are omitted. All material below is to be viewed through a purely computational lens which shows how models are coded/structured in Stan and understanding the output. 
+
+\section{Bayesian Framework}
+Unlike the frequentist approach where point estimates are computed for parameter values, the Bayesian framework allows us to specify a distribution for the parameter value \textit{given} the data. This distribution is referred to as the posterior distribution of the parameter and is a function of the data. 
+
+\begin{equation}
+\mathbb{P}(\theta | \text{data}) \propto \mathcal{L}(\text{data} | \theta) \cdot \mathbb{P}(\theta)
+\end{equation}
+The quantities above will be referred to as:
+\begin{itemize}
+\item $\mathbb{P}(\theta | \text{data}) $ - posterior distribution (function of the parameter)
+\item $\mathcal{L}(\text{data} | \theta) $ - likelihood (function of the data)
+\item $\mathbb{P}(\theta)$ - prior distribution (function of the parameter)
+\end{itemize}
+
+Parameter estimates correspond to the mode of the posterior distribution and this distribution is precisely what Stan explores with it's various MCMC algorithms. 
+
+<!-- Why and how of stan -->
+\section{Stan and it's Samplers}
+Stan is a language used for (amongst other things) full Bayesian statistical inference with MCMC sampling. It implements two MCMC methods; Hamiltonian Monte Carlo (HMC) and No U-Turn Sampling (NUTS). This section provides a high level summary of both algorithms. The key thing to keep in mind is that in order to have a "good" estimate of the model parameters we need to fully explore the posterior density of the parameters. These algorithms add certain contraints to the basic randomly generated steps of a vanilla Metropolis-Hastings (this is what we mean by MCMC algorithm) which makes them more efficient in exploring "new" parts of the space. 
+
+The set up of any MCMC method is that we want to have an estimate for a parameter vector $\theta$. Based on our data, we compute the unnormalized posterior distribution, $\mathbb{P}(\theta | X)$, of the parameter vector. Now, we must sample from this distribution. MCMC work by creating a Markov chain which has the same distribution as posterior. Since this distribution will not always be known we take a second distribution $f(x)$ such taht $f(\theta) \propto k \mathbb{P}(\theta | X)$ where $k$ is some constant. Now we initialize the algorithm at some point $\theta_0$ then sample a potential next step $\theta'$ from some proposed density $g(\theta' | \theta_t)$ (note since we are taking samples of $\theta$ over time we create a Markov chain). We typically take $g$ to be a Gaussian distribution centered at $x_t$ as to keep the proposed steps relatively close to our intial point. Once we have a proposal, we verify that this is a "good" step. To do so, we compute $\alpha = \frac{f(\theta')}{f(\theta_t)} = \frac{\mathbb{P}(\theta' | X)}{\mathbb{P}(\theta_ | X)}$ and accept only if $\alpha \geq u \sim U(0,1)$. We will always accept if the next step is more probable (i.e. in the right direction) since that ratio will be above 1. Manipulating this error is precisely what HMC and NUTS attempt to do by exploiting some additional information about the posterior (namely gradients).
+
+\subsection{Hamiltonian Monte Carlo}
+HMC differs from the standard version of Metropolis-Hastings by introducing an additional variable referred to as the \textit{auxiliary momentum}. We will denote this with $\rho$. Much like with everything else in the Bayesian world this will be specified by a probability distribution. 
+\begin{align}
+\mathbb{P}(\rho, \theta) &= \mathbb{P}(\rho | \theta) \cdot \mathbb{P}(\theta) \\
+\rho &\sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})
+\end{align}
+The covariance matrix $\Sigma_\theta$ is computed during the warm up stage of the algorithm (think of this as a stage in the sampling where we go from no knowledge of the posterior to some knowledge of the posterior). 
+
+This auxiliary momentum is then used to compute the Hamiltonian of the posterior. The Hamiltonian is a matrix describing the level sets of the distribution in high dimensional space. Much like planets orbit in a set eliptical path, each level set of a distribution is a possible elipse for an object to move along and the collection of these level sets form a dynamical system. 
+\begin{align}
+H(\rho, \theta) &= - \log\mathbb{P}(\rho, \theta) \\
+&= - \log\mathbb{P}(\rho | \theta) - \log \mathbb{P}(\theta)
+\end{align}
+where we denote the \textbf{kinetic energy} of the system as $T(\rho | \theta) =  \log\mathbb{P}(\rho | \theta)$ and the \textbf{potential energy} as $V(\theta) = \log\mathbb{P}(\theta)$. The proposal $\theta'$ now turns into a 2 stage process.
+
+\begin{enumerate}
+\item Sample from $\rho \sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})$
+\item Solve the partial differential equation system 
+\begin{align*}
+&\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d \log\mathbb{P}(\rho | \theta)}{d\rho} \\ 
+\frac{d\rho}{dt} = -\frac{d \log\mathbb{P}(\rho | \theta)}{d\theta} - \frac{d \log\mathbb{P}(\theta)}{d\theta} \end{array} \right. \\
+&=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T(\rho | \theta)}{d\rho} \\ 
+\frac{d\rho}{dt} = -0 - \frac{d V(\theta)}{d\theta} \end{array} \right. \\
+&=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T}{d\rho} \\ 
+\frac{d\rho}{dt} = - \frac{d V}{d\theta} \end{array} \right. \end{align*} with a leapfrog integrator 
+\end{enumerate}
+The estimate is then computed by drawing a new sample of $\rho$, taking a $\frac{1}{2}$ step update in the momentum, a full step in the parameter value and another $\frac{1}{2}$ step in the momentum before computing $\alpha$.
+\begin{align}
+\rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
+\theta^* &\leftarrow \theta + \epsilon \text{diag}(\Sigma_\theta)^{-1} \rho* \\
+\rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
+\Rightarrow &(\rho^*, \theta^*) 
+\end{align}
+Where the pair $(\rho^*, \theta^*)$ is the new proposal. Now we apply the Metroplois step and get an acceptance probability of $p_{\text{accept}} = \min{1 , \exp \{ H(p,\theta) - H(p^*, \theta^*) \} }$
+
+\subsection{No U-Turn Sampler}
+One downfall of the HMC algorithm is that you may end up with a situation where you are going around in circles around the posterior and returning to where you started. This creates some inefficiencies that the NUTS aims fix this by taking steps in both the positive and negative directions as dictated by the differential system. It continues to take steps until the gradients change direction. Once those points are detected, an average is choosen as the proposal. 
+
+This algorithm is much more complex and is thus omitted from this discussion. If you'd like more details, [this paper](https://arxiv.org/abs/1701.02434) by Michael Betancourt will provide more details.
+
+\subsection{Stan Code Structure}
+The way we use Stan is by encoding a model in Stan code (a .stan file) then running it through R. Models are laid out in an almost heirarchical structure. First is a data chunk listing all of the variables which will be inputted. Next is a parameters section which we use for specifying the quantities we want to estimate. Lastly, we need a section to specify the structure of the model, namely the priors and likelihood functions. 
+
+\subsection{Necessary Packages}
+This section is simply for loading the base R packages we will be using to perform our Bayesian Inference. 
+
+```{r Preamble, echo=TRUE, eval=TRUE, error=FALSE, message=FALSE, warning= FALSE}
+### PACKAGES ####
+library(tidyverse)            # data processing
+library(rstan)                # R version of Stan
+library(parallel)             # enable parallel computing 
+
+### OPTIONS ####
+# Choose one of the below
+options(mc.cores = 1)                             # all chains computed on 1 core
+#options(mc.cores = parallel::detectCores())       # chains run in parallel
+
+rstan_options(auto_write = TRUE)
+```
+
+<!-- modeling -->
+\section{Time Series Models}
+Now that we have an understanding of how Stan computes the estimates, let's write some Stan code. \textit{I once again would like to emphasize that this section is simply fitting the various models to the data regardless of how poorly they may perform!} All of the models are assumed to have Gaussian noise components and will be fitted based on the JohnsonJohnson data set. 
+
+```{r Data, echo=TRUE, eval=TRUE, error=FALSE, message=FALSE, warning= FALSE}
+returns <- JohnsonJohnson
+
+plot(returns, 
+     type = 'l',
+     main ='Johnsom&Johnson Quarterly Returns')
+```
+
+
+\subsection{Auto-regressive Model}
+Auto-regressive models of order p, denoted AR(p), take the form:
+\begin{align}
+y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \epsilon_t \\
+\epsilon_t &\sim N(0, \sigma^2)
+\end{align}
+The parameters we need to estimate are $(\phi_1, \ldots, \phi_p, \sigma)$. We begin with a simple AR(1) model before generalizing the Stan code to allow for the user to input the order of the model as part of the data.
+
+\subsubsection{AR(1)}
+The Stan code is as follows:
+```{stan, output.var="AR1", eval = TRUE,  message = FALSE}
+data {
+int<lower=0> N;               // length of TS
+vector[N] returns;            // name of the vector/column we feed in
+}
+parameters {
+real phi_0;                 // estimate the mean 
+real phi_1;                 // estimate the first order parameter
+real<lower=0> sigma;          // estimate the std dev of the Gaussian noise
+}
+model {
+// priors
+phi_0 ~ normal(0,4);
+phi_1 ~ normal(0,2);
+
+returns[2:N] ~ normal(phi_0 + phi_1 * returns[1:(N-1)], sigma);
+// note: improper/default priors are used here. We specify priors later
+}
+
+```
+
+```{r AR1, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE,  message = FALSE}
+# Set up data like the data section of stan code
+AR1_data <- list(N = length(returns),
+                 returns = returns)
+
+AR1_fit <- rstan::stan("AR1.stan", 
+                       data = AR1_data,
+                       iter = 2000,
+                       chains = 4, 
+                       refresh = 500)
+```
+
+```{r AR1 outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
+# the model 
+AR1_fit
+
+# posterior plots
+stan_plot(AR1_fit, 
+          point_est = "mean", 
+          show_density = TRUE) + 
+     labs(title = 'AR(1) Posterior Plots',
+          subtitle = 'of Johnson&Johnson Dataset')  
+```
+
+\subsubsection{AR(p)}
+The Stan code is as follows:
+```{stan, output.var="ARp", eval = TRUE,  message = FALSE}
+data {
+int<lower=0> P;                           // order of the model
+int<lower=0> N;                           // length of TS
+vector[N] returns;                          // name of TS vector 
+}
+
+parameters {
+real mu;                                    // mean of TS
+real phi[P];                              // real valued theta vector of length p
+real <lower = 0> sigma;                     // std dev of Gaussian noise 
+}
+
+model { 
+// specify priors 
+mu ~ normal(0,4);
+phi ~ normal(0, 2);
+sigma ~ exponential(2);
+
+// use for loops to set up the likelihood
+
+for (n in (P+1):N){
+real average = mu;
+
+for (p in 1:P) 
+average += phi[p] * returns[n - p];
+
+returns[n] ~ normal(average, sigma);    // mean is the combo of previous P steps in the process 
+}
+}
+
+```
+
+```{r ARp, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE,  message = FALSE}
+# Set up data like the data section of stan code
+model_order <- 3
+ARp_data <- list(P = model_order, # order of AR model
+                 N = length(returns), # length of TS 
+                 returns = returns # the data
+) 
+
+ARp_fit <- rstan::stan("ARp.stan", 
+                       data = ARp_data,
+                       iter = 2000,
+                       chains = 2, 
+                       refresh = 500)
+
+```
+
+```{r ARp outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
+# the model 
+ARp_fit
+
+# posterior plots
+stan_plot(ARp_fit, 
+          point_est = "mean", 
+          show_density = TRUE) + 
+     labs(title = 'AR(3) Posterior Plots',
+          subtitle = 'of Johnson&Johnson Dataset')  
+```
+\subsection{Autoregressive Conditional Heteroskedasticty Model}
+This section is limited to ARCH(1) models but this can be extended to an ARCH(p) model with a for loop on the variance parameter in the likelihood. The Stan code will be as follows.
+
+```{stan,  output.var="ARCH1", eval = TRUE,  message = FALSE}
+data{
+int<lower = 0> N;                           // length of time series
+vector[N] returns;                          // the time series
+}
+
+parameters{
+real mu;                                    // a constant - average return
+real<lower = 0> alpha_0;                    // parameter of ARCH portion - intercept of noise
+real<lower = 0, upper = 1> alpha_1;         // another parameter of ARCH - slope of noise
+}
+
+model{
+// priors
+mu ~ normal(0,2);
+alpha_0 ~ normal(0, 2);
+alpha_1 ~ normal(0,1);
+
+// likelihood - can be vectorized instead of a loop
+for(n in 2:N)
+returns[n] ~ normal(mu, sqrt(alpha_0 + alpha_1 * pow(returns[n-1] - mu,2)));
+}
+
+```
+
+```{r ARCH1, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE. message = FALSE}
+# Set up data like the data section of stan code
+ARCH1_data <- list(N = length(returns),
+                   returns = returns)
+
+ARCH1_fit <- rstan::stan("ARCH1.stan", 
+                         data = ARCH1_data,
+                         iter = 2000,
+                         chains = 2, 
+                         refresh = 500)
+```
+
+```{r ARCH1 outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
+# the model 
+ARCH1_fit
+
+# posterior plots
+stan_plot(ARCH1_fit, 
+          point_est = "mean", 
+          show_density = TRUE) + 
+     labs(title = 'ARCH(1) Posterior Plots',
+          subtitle = 'of Johnson&Johnson Dataset')  
+```
+
+\subsection{Moving Average Model}
+Moving average models of order q, denoted MA(q), take the form:
+\begin{align}
+y_t &= \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
+\epsilon_t &\sim N(0, \sigma^2)
+\end{align}
+The parameters we need to estimate are $(\theta_1, \ldots, \theta_p, \sigma)$. The Stan code is as follows.
+
+```{stan,  output.var="MAq", eval = TRUE, message = FALSE}
+data {
+int<lower = 0> Q;                                   // order of model 
+int<lower = 1> T;                                   // length of time series
+vector[T] returns;                                  // time series vector
+}
+parameters {
+real mu;                                            // mean of the time series
+real theta[Q];                                      // the coefficients
+real<lower = 0> sigma;                              // noise scale parameter
+}
+model {
+// useful parameters
+vector[T] previous_steps;                           // prediction at time t (the moving average)
+vector[T] error;                                    // noise at each step
+
+// priors 
+mu ~ cauchy(0, 2.5);
+theta ~ normal(0, 2);
+sigma ~ exponential(2.01);
+
+// likelihood
+for(t in 1:T){
+previous_steps[t] = mu;
+error[t] = returns[t] - mu;
+
+for(q in 1:min(t-1, Q)){
+previous_steps[t] = previous_steps[t] + theta[q] * error[t-q];
+error[t] = error[t] - theta[q] * error[t-q];
+}
+}
+
+returns ~ normal(previous_steps, sigma);
+}
+
+```
+
+```{r MAq, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE, message = FALSE}
+# Set up data like the data section of stan code
+model_order = 4
+MAq_data <- list(Q = model_order, # order of AR model
+                 T = length(returns), # length of TS 
+                 returns = returns # the data
+) 
+
+MAq_fit <- rstan::stan("MAq.stan", 
+                       data = MAq_data,
+                       iter = 2000,
+                       chains = 2, 
+                       refresh = 500, 
+                       pars = c("mu", "theta","sigma"))
+```
+
+```{r MAq outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
+# the model 
+MAq_fit
+
+# posterior plots
+stan_plot(MAq_fit, 
+          point_est = "mean", 
+          show_density = TRUE) + 
+     labs(title = 'MA(3) Posterior Plots',
+          subtitle = 'of Johnson&Johnson Dataset')  
+```
+
+The posterior plots look like houses from a Dr. Seuss book which means that this is a multimodal posterior distribution. 
+
+\subsection{Auto-regressive Moving Average Model}
+
+Auto-regressuve Moving average models of order (p,q), denoted ARMA(p,q), take the form:
+\begin{align}
+y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
+\epsilon_t &\sim N(0, \sigma^2)
+\end{align}
+
+The parameters we need to estimate are $(\phi_1, \ldots, \phi_p, \theta_1, \ldots, \theta_p, \sigma)$. The Stan code is as follows.
+
+```{stan, output.var = 'ARMApq', eval = TRUE}
+data {
+int<lower = 0> P;                       // AR Order
+int<lower = 0> Q;                       // MA Order
+int<lower=1> T;                         // num observations
+real y[T];                              // observed outputs
+}
+parameters {
+real mu;                                // mean coeff
+vector[P] phi;                          // autoregression coeff
+vector[Q] theta;                        // moving avg coeff
+real<lower=0> sigma;                    // noise scale
+}
+model {
+vector[T] nu;                           // prediction for time t
+vector[T] err;                          // error for time t
+
+// initialization
+for(t in 1:max(P,Q)){
+nu[t] = mu + phi[t] * mu;           // assume err[0] == 0
+err[t] = y[t] - nu[t];
+}
+
+for (t in (max(P,Q)+1):T) {
+nu[t] = mu;
+// 
+// AR component
+for(p in 1:P){
+nu[t] = nu[t] + phi[p] * y[t-p];
+
+}
+// MA component
+for(q in 1:Q){
+nu[t] = nu[t] + theta[q] * y[t-q];
+}
+//
+// error computation 
+err[t] = y[t] - nu[t];
+}
+
+// priors
+mu ~ normal(0, 10);        
+phi ~ normal(0, 2);
+theta ~ normal(0, 2);
+sigma ~ cauchy(0, 5);
+
+// likelihood
+err ~ normal(0, sigma);    
+}
+
+```
+
+```{r ARMApq, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+# Set up data like the data section of stan code
+AR_order = 2
+MA_order = 2
+
+ARMApq_data <- list(P = AR_order,
+                    Q = MA_order,
+                    T = length(returns),
+                    y = returns)
+
+ARMApq_fit <- rstan::stan('~/Documents/Github/RStan/ARMAV2.stan',
+                          data = ARMApq_data,
+                          iter = 4000,
+                          chains = 1,
+                          thin = 1,
+                          algorithm = 'HMC')
+```
+
+```{r ARMAq outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
+# the model 
+ARMApq_fit
+
+# posterior plots
+stan_plot(ARMApq_fit, 
+          point_est = "mean", 
+          show_density = TRUE) + 
+     labs(title = 'ARMA(2,2) Posterior Plots',
+          subtitle = 'of Johnson&Johnson Dataset')  
+```
+
+\section{Acknowledgments}
+
+The material for this page was sourced from the [Stan User's Guide](https://mc-stan.org/docs/2_23/stan-users-guide/index.html).

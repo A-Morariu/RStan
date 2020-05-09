@@ -5,6 +5,7 @@ library(tidyverse)
 library(rstan)
 library(parallel)
 
+# options(mc.cores = parallel::detectCores())
 options(mc.cores = 1)
 rstan_options(auto_write = TRUE)
 ### Data
@@ -68,16 +69,57 @@ plot(ARCH1_fit)
 MAq_code <- rstan::stanc(file = "~/Documents/Github/RStan/MAq.stan")
 MAq_model <- rstan::stan_model(stanc_ret = MAq_code)
 
-model_order <- 3
+model_order <- 2
 MAq_data <- list(Q = model_order, # order of AR model
-                 N = length(returns), # length of TS 
+                 T = length(returns), # length of TS 
                  returns = returns # the data
 ) 
 
 MAq_fit <- rstan::sampling(MAq_model,
                            data = MAq_data,
-                           iter = 2000,
+                           iter = 4000,
                            chains = 2,
-                           thin = 1)
+                           thin = 1,
+                           control = list(adapt_delta = 0.99))
 MAq_fit
 plot(MAq_fit)
+
+# attempt 2
+MAq_codeV2 <- rstan::stanc(file = "~/Documents/Github/RStan/MAqV2.stan")
+MAq_modelV2 <- rstan::stan_model(stanc_ret = MAq_codeV2)
+
+model_order <- 2
+MAq_dataV2 <- list(Q = model_order, # order of AR model
+                 T = length(returns), # length of TS 
+                 returns = returns # the data
+) 
+
+MAq_fitV2 <- rstan::sampling(MAq_modelV2,
+                           data = MAq_dataV2,
+                           iter = 10000,
+                           chains = 2,
+                           thin = 1,
+                           control = list(adapt_delta = 0.99))
+MAq_fitV2
+plot(MAq_fitV2)
+
+
+### ARMA(p,q) model
+ARMApq_code <- rstan::stanc(file = '~/Documents/Github/RStan/ARMAV2.stan')
+ARMApq_model <- rstan::stan_model(stanc_ret = ARMApq_code)
+
+AR_order = 2; MA_order = 2
+
+ARMApq_data <- list(P = AR_order,
+                    Q = MA_order,
+                    T = length(returns),
+                    y = returns)
+
+ARMApq_fit <- rstan::sampling(ARMApq_model,
+                              data = ARMApq_data,
+                              iter = 4000,
+                              chains = 1,
+                              thin = 1,
+                              algorithm = 'HMC')
+ARMApq_fit
+plot(ARMApq_fit)
