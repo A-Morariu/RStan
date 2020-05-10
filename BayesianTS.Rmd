@@ -21,9 +21,9 @@ Unlike the frequentist approach where point estimates are computed for parameter
 \end{equation}
 The quantities above will be referred to as:
 \begin{itemize}
-\item $\mathbb{P}(\theta | \text{data}) $ - posterior distribution (function of the parameter)
-\item $\mathcal{L}(\text{data} | \theta) $ - likelihood (function of the data)
-\item $\mathbb{P}(\theta)$ - prior distribution (function of the parameter)
+     \item $\mathbb{P}(\theta | \text{data}) $ - posterior distribution (function of the parameter)
+     \item $\mathcal{L}(\text{data} | \theta) $ - likelihood (function of the data)
+     \item $\mathbb{P}(\theta)$ - prior distribution (function of the parameter)
 \end{itemize}
 
 Parameter estimates correspond to the mode of the posterior distribution and this distribution is precisely what Stan explores with it's various MCMC algorithms. 
@@ -37,35 +37,35 @@ The set up of any MCMC method is that we want to have an estimate for a paramete
 \subsection{Hamiltonian Monte Carlo}
 HMC differs from the standard version of Metropolis-Hastings by introducing an additional variable referred to as the \textit{auxiliary momentum}. We will denote this with $\rho$. Much like with everything else in the Bayesian world this will be specified by a probability distribution. 
 \begin{align}
-\mathbb{P}(\rho, \theta) &= \mathbb{P}(\rho | \theta) \cdot \mathbb{P}(\theta) \\
-\rho &\sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})
+     \mathbb{P}(\rho, \theta) &= \mathbb{P}(\rho | \theta) \cdot \mathbb{P}(\theta) \\
+     \rho &\sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})
 \end{align}
 The covariance matrix $\Sigma_\theta$ is computed during the warm up stage of the algorithm (think of this as a stage in the sampling where we go from no knowledge of the posterior to some knowledge of the posterior). 
 
 This auxiliary momentum is then used to compute the Hamiltonian of the posterior. The Hamiltonian is a matrix describing the level sets of the distribution in high dimensional space. Much like planets orbit in a set eliptical path, each level set of a distribution is a possible elipse for an object to move along and the collection of these level sets form a dynamical system. 
 \begin{align}
-H(\rho, \theta) &= - \log\mathbb{P}(\rho, \theta) \\
-&= - \log\mathbb{P}(\rho | \theta) - \log \mathbb{P}(\theta)
+     H(\rho, \theta) &= - \log\mathbb{P}(\rho, \theta) \\
+     &= - \log\mathbb{P}(\rho | \theta) - \log \mathbb{P}(\theta)
 \end{align}
 where we denote the \textbf{kinetic energy} of the system as $T(\rho | \theta) =  \log\mathbb{P}(\rho | \theta)$ and the \textbf{potential energy} as $V(\theta) = \log\mathbb{P}(\theta)$. The proposal $\theta'$ now turns into a 2 stage process.
 
 \begin{enumerate}
-\item Sample from $\rho \sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})$
-\item Solve the partial differential equation system 
-\begin{align*}
-&\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d \log\mathbb{P}(\rho | \theta)}{d\rho} \\ 
-\frac{d\rho}{dt} = -\frac{d \log\mathbb{P}(\rho | \theta)}{d\theta} - \frac{d \log\mathbb{P}(\theta)}{d\theta} \end{array} \right. \\
-&=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T(\rho | \theta)}{d\rho} \\ 
-\frac{d\rho}{dt} = -0 - \frac{d V(\theta)}{d\theta} \end{array} \right. \\
-&=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T}{d\rho} \\ 
-\frac{d\rho}{dt} = - \frac{d V}{d\theta} \end{array} \right. \end{align*} with a leapfrog integrator 
+     \item Sample from $\rho \sim MVN (0, \text{diag}(\Sigma_\theta)^{-1})$
+     \item Solve the partial differential equation system 
+     \begin{align*}
+     &\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d \log\mathbb{P}(\rho | \theta)}{d\rho} \\ 
+     \frac{d\rho}{dt} = -\frac{d \log\mathbb{P}(\rho | \theta)}{d\theta} - \frac{d      \log\mathbb{P}(\theta)}{d\theta} \end{array} \right. \\
+     &=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T(\rho | \theta)}{d\rho} \\ 
+     \frac{d\rho}{dt} = -0 - \frac{d V(\theta)}{d\theta} \end{array} \right. \\
+     &=\left\{ \begin{array}{l} \frac{d \theta}{dt} = +\frac{d T}{d\rho} \\ 
+     \frac{d\rho}{dt} = - \frac{d V}{d\theta} \end{array} \right. \end{align*} with a leapfrog integrator 
 \end{enumerate}
 The estimate is then computed by drawing a new sample of $\rho$, taking a $\frac{1}{2}$ step update in the momentum, a full step in the parameter value and another $\frac{1}{2}$ step in the momentum before computing $\alpha$.
 \begin{align}
-\rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
-\theta^* &\leftarrow \theta + \epsilon \text{diag}(\Sigma_\theta)^{-1} \rho* \\
-\rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
-\Rightarrow &(\rho^*, \theta^*) 
+     \rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
+     \theta^* &\leftarrow \theta + \epsilon \text{diag}(\Sigma_\theta)^{-1} \rho* \\
+     \rho^* &\leftarrow \rho - \frac{\epsilon}{2} \frac{dV}{d\theta} \\
+     \Rightarrow &(\rho^*, \theta^*) 
 \end{align}
 Where the pair $(\rho^*, \theta^*)$ is the new proposal. Now we apply the Metroplois step and get an acceptance probability of $p_{\text{accept}} = \min{1 , \exp \{ H(p,\theta) - H(p^*, \theta^*) \} }$
 
@@ -110,8 +110,8 @@ plot(returns,
 \subsection{Auto-regressive Model}
 Auto-regressive models of order p, denoted AR(p), take the form:
 \begin{align}
-y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \epsilon_t \\
-\epsilon_t &\sim N(0, \sigma^2)
+     y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \epsilon_t \\
+     \epsilon_t &\sim N(0, \sigma^2)
 \end{align}
 The parameters we need to estimate are $(\phi_1, \ldots, \phi_p, \sigma)$. We begin with a simple AR(1) model before generalizing the Stan code to allow for the user to input the order of the model as part of the data.
 
@@ -164,7 +164,7 @@ stan_plot(AR1_fit,
 
 \subsubsection{AR(p)}
 The Stan code is as follows:
-```{stan, output.var="ARp", eval = TRUE,  message = FALSE}
+```{stan, output.var="ARp", eval = TRUE,  message = FALSE, warning = FALSE}
 data {
 int<lower=0> P;                           // order of the model
 int<lower=0> N;                           // length of TS
@@ -209,7 +209,7 @@ ARp_fit <- rstan::stan("ARp.stan",
                        data = ARp_data,
                        iter = 2000,
                        chains = 2, 
-                       refresh = 500)
+                       refresh = 0)
 
 ```
 
@@ -225,9 +225,18 @@ stan_plot(ARp_fit,
           subtitle = 'of Johnson&Johnson Dataset')  
 ```
 \subsection{Autoregressive Conditional Heteroskedasticty Model}
-This section is limited to ARCH(1) models but this can be extended to an ARCH(p) model with a for loop on the variance parameter in the likelihood. The Stan code will be as follows.
+This section is limited to ARCH(1) models but this can be extended to an ARCH(p) model with a for loop on the variance parameter in the likelihood. The ARCH(p) model is set up as follows:
 
-```{stan,  output.var="ARCH1", eval = TRUE,  message = FALSE}
+\begin{align}
+     r_t &= \mu + \omega_t \\
+     \omega_t &= \sigma_t \epsilon_t \\
+     \sigma_t^2 &= \alpha_0 + \alpha_1 a_{t-1}^2 \\
+     \epsilon_t &\sim N(0, \sigma^2)
+\end{align}
+
+The Stan code is as follows.
+
+```{stan,  output.var="ARCH1", eval = TRUE,  message = FALSE, warning = FALSE}
 data{
 int<lower = 0> N;                           // length of time series
 vector[N] returns;                          // the time series
@@ -237,6 +246,7 @@ parameters{
 real mu;                                    // a constant - average return
 real<lower = 0> alpha_0;                    // parameter of ARCH portion - intercept of noise
 real<lower = 0, upper = 1> alpha_1;         // another parameter of ARCH - slope of noise
+real<lower = 0> sigma;
 }
 
 model{
@@ -244,15 +254,16 @@ model{
 mu ~ normal(0,2);
 alpha_0 ~ normal(0, 2);
 alpha_1 ~ normal(0,1);
+sigma ~ normal(0,2);
 
 // likelihood - can be vectorized instead of a loop
 for(n in 2:N)
-returns[n] ~ normal(mu, sqrt(alpha_0 + alpha_1 * pow(returns[n-1] - mu,2)));
+returns[n] ~ normal(mu,  sqrt(alpha_0 + alpha_1 * sigma * pow(returns[n-1] - mu,2)));
 }
 
 ```
 
-```{r ARCH1, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE. message = FALSE}
+```{r ARCH1, echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE, message = FALSE}
 # Set up data like the data section of stan code
 ARCH1_data <- list(N = length(returns),
                    returns = returns)
@@ -261,7 +272,8 @@ ARCH1_fit <- rstan::stan("ARCH1.stan",
                          data = ARCH1_data,
                          iter = 2000,
                          chains = 2, 
-                         refresh = 500)
+                         refresh = 0,
+                         control = list(adapt_delta = 0.99))
 ```
 
 ```{r ARCH1 outputs, echo=TRUE, eval=TRUE,  warning=FALSE, error=FALSE}
@@ -279,12 +291,12 @@ stan_plot(ARCH1_fit,
 \subsection{Moving Average Model}
 Moving average models of order q, denoted MA(q), take the form:
 \begin{align}
-y_t &= \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
-\epsilon_t &\sim N(0, \sigma^2)
+     y_t &= \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
+     \epsilon_t &\sim N(0, \sigma^2)
 \end{align}
 The parameters we need to estimate are $(\theta_1, \ldots, \theta_p, \sigma)$. The Stan code is as follows.
 
-```{stan,  output.var="MAq", eval = TRUE, message = FALSE}
+```{stan,  output.var="MAq", eval = TRUE, message = FALSE, warning = FALSE}
 data {
 int<lower = 0> Q;                                   // order of model 
 int<lower = 1> T;                                   // length of time series
@@ -333,7 +345,7 @@ MAq_fit <- rstan::stan("MAq.stan",
                        data = MAq_data,
                        iter = 2000,
                        chains = 2, 
-                       refresh = 500, 
+                       refresh = 0, 
                        pars = c("mu", "theta","sigma"))
 ```
 
@@ -355,60 +367,60 @@ The posterior plots look like houses from a Dr. Seuss book which means that this
 
 Auto-regressuve Moving average models of order (p,q), denoted ARMA(p,q), take the form:
 \begin{align}
-y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
-\epsilon_t &\sim N(0, \sigma^2)
+     y_t &= \phi_1 y_{t-1} + \ldots + \phi_p y_{t-p} + \theta_1 y\epsilon_{t-1} + \ldots + \theta_p epsilon_{t-q} + \epsilon_t \\
+     \epsilon_t &\sim N(0, \sigma^2)
 \end{align}
 
 The parameters we need to estimate are $(\phi_1, \ldots, \phi_p, \theta_1, \ldots, \theta_p, \sigma)$. The Stan code is as follows.
 
-```{stan, output.var = 'ARMApq', eval = TRUE}
+```{stan output.var='ARMApq', eval = FALSE, warning = FALSE}
 data {
-int<lower = 0> P;                       // AR Order
-int<lower = 0> Q;                       // MA Order
-int<lower=1> T;                         // num observations
-real y[T];                              // observed outputs
+    int<lower = 0> P;                       // AR Order
+    int<lower = 0> Q;                       // MA Order
+    int<lower=1> T;                         // num observations
+    real y[T];                              // observed outputs
 }
 parameters {
-real mu;                                // mean coeff
-vector[P] phi;                          // autoregression coeff
-vector[Q] theta;                        // moving avg coeff
-real<lower=0> sigma;                    // noise scale
+    real mu;                                // mean coeff
+    vector[P] phi;                          // autoregression coeff
+    vector[Q] theta;                        // moving avg coeff
+    real<lower=0> sigma;                    // noise scale
 }
 model {
-vector[T] nu;                           // prediction for time t
-vector[T] err;                          // error for time t
+    vector[T] nu;                           // prediction for time t
+    vector[T] err;                          // error for time t
 
-// initialization
-for(t in 1:max(P,Q)){
-nu[t] = mu + phi[t] * mu;           // assume err[0] == 0
-err[t] = y[t] - nu[t];
-}
+    // initialization
+    for(t in 1:max(P,Q)){
+        nu[t] = mu + phi[t] * mu;           // assume err[0] == 0
+        err[t] = y[t] - nu[t];
+    }
 
-for (t in (max(P,Q)+1):T) {
-nu[t] = mu;
-// 
-// AR component
-for(p in 1:P){
-nu[t] = nu[t] + phi[p] * y[t-p];
+    for (t in (max(P,Q)+1):T) {
+        nu[t] = mu;
+        // 
+        // AR component
+        for(p in 1:P){
+            nu[t] = nu[t] + phi[p] * y[t-p];
 
-}
-// MA component
-for(q in 1:Q){
-nu[t] = nu[t] + theta[q] * y[t-q];
-}
-//
-// error computation 
-err[t] = y[t] - nu[t];
-}
+        }
+        // MA component
+        for(q in 1:Q){
+            nu[t] = nu[t] + theta[q] * y[t-q];
+        }
+        //
+        // error computation 
+        err[t] = y[t] - nu[t];
+    }
 
-// priors
-mu ~ normal(0, 10);        
-phi ~ normal(0, 2);
-theta ~ normal(0, 2);
-sigma ~ cauchy(0, 5);
-
-// likelihood
-err ~ normal(0, sigma);    
+    // priors
+    mu ~ normal(0, 10);        
+    phi ~ normal(0, 2);
+    theta ~ normal(0, 2);
+    sigma ~ cauchy(0, 5);
+    
+    // likelihood
+    err ~ normal(0, sigma);    
 }
 
 ```
@@ -426,7 +438,8 @@ ARMApq_data <- list(P = AR_order,
 ARMApq_fit <- rstan::stan('~/Documents/Github/RStan/ARMAV2.stan',
                           data = ARMApq_data,
                           iter = 4000,
-                          chains = 1,
+                          refresh = 0,
+                          chains =4,
                           thin = 1,
                           algorithm = 'HMC')
 ```
@@ -441,6 +454,64 @@ stan_plot(ARMApq_fit,
           show_density = TRUE) + 
      labs(title = 'ARMA(2,2) Posterior Plots',
           subtitle = 'of Johnson&Johnson Dataset')  
+```
+
+\section{Additional Stan Plots}
+Beyond the \texttt{stan_plot} objects above, there are several other plots provided for posterior checks. This section is dedicated to showing those plots. 
+
+```{r Posterior Plots}
+library(gridExtra)
+# All plots will be done on the ARMA(2,2) model
+
+# Posterior plots - these all tell us the same thing
+stan_hist(ARMApq_fit,
+          bins = 20) + 
+     labs(title = "Posterior Histograms")
+
+stan_dens(ARMApq_fit,
+          separate_chains = TRUE, 
+          alpha = 0.3)
+
+# Let's look at the chains themselves
+stan_trace(ARMApq_fit, 
+           alpha = 0.7) +
+  scale_color_brewer(type = "div") +
+     theme(strip.background = ggplot2::element_rect(fill = "maroon"),
+                     strip.text = ggplot2::element_text(size = 13, color = "black")) 
+# Look at individual parameter's chains 
+stan_trace(ARMApq_fit,
+           alpha = 0.7, 
+           pars = c("theta"),          # add name of parameter vector to the vector
+           inc_warmup = FALSE) +      
+     labs(title ='Trace Plots of Markov Chains',
+          subtitle = 'MA Components') + 
+     scale_color_brewer(type = "div") +
+     theme(strip.background = ggplot2::element_rect(fill = "maroon"),
+           plot.title = element_text(color = 'black'),
+           strip.text = ggplot2::element_text(size = 12, color = "white"),
+           plot.background = element_rect(fill = 'grey90'))
+
+# Lastly we have the scatterplots. These will show the joint posteriors of 
+# 2 named parameters 
+stan_scat(ARMApq_fit, 
+          pars = c("mu", "phi[2]"), 
+          color = "blue", 
+          size = 2,
+          alpha = 0.3) +
+     labs(title = "Posterior Joint Density Plot",
+          subtitle = 'Time series mean vs 1st order AR Component') +
+     theme(panel.background = ggplot2::element_rect(fill = "black")) + 
+     geom_density2d(color = 'skyblue')
+
+stan_scat(ARMApq_fit, 
+          pars = c("theta[1]", "theta[2]"), 
+          color = "blue", 
+          size = 2,
+          alpha = 0.3) +
+     labs(title = "Posterior Joint Density Plot",
+          subtitle = '1st order MA Component vs 2nd order MA Component') +
+     theme(panel.background = ggplot2::element_rect(fill = "black")) + 
+     geom_density2d(color = 'skyblue')
 ```
 
 \section{Acknowledgments}
